@@ -1,0 +1,35 @@
+# === Secrets (NE JAMAIS committer) ===
+.env
+*.env
+!.env.example
+
+# === Environnements virtuels Python ===
+.venv/
+venv/
+env/
+jalon2/.venv/
+
+# === Cache & fichiers compilés Python ===
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# === Données lourdes / téléchargées (reproductibles) ===
+data/
+*.csv
+
+# === Modèles entraînés (régénérés par le script) ===
+models/
+*.joblib
+*.pkl
+
+# === Fichiers système / éditeurs ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
