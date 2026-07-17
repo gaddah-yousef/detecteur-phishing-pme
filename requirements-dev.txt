@@ -1,0 +1,10 @@
+# Outils de developpement et DevSecOps (pas necessaires a l'execution)
+-r requirements.txt
+
+# Phase 1 - Tests & qualite
+pytest
+ruff
+
+# Phase 2 - Securite
+bandit
+pip-audit

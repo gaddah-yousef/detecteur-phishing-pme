@@ -2,9 +2,7 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-
 from entrainer_modele import extraire_caracteristiques
-
 
 MODEL_PATH = Path("models/phishing_detector.joblib")
 
