@@ -1,0 +1,48 @@
+name: CI DevSecOps
+
+# Declencheurs : a chaque push et a chaque pull request
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ----- Job 1 : qualite et securite du code -----
+  qualite-et-securite:
+    runs-on: ubuntu-latest
+    steps:
+      # Recupere le code du depot dans la VM
+      - uses: actions/checkout@v4
+
+      # Installe Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Installer les dependances
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests unitaires (pytest)
+        run: pytest -v
+
+      - name: SAST (bandit)
+        run: bandit -r jalon1 jalon2 -x jalon2/tests
+
+      - name: SCA (pip-audit)
+        run: pip-audit
+
+  # ----- Job 2 : detection de secrets (en parallele) -----
+  scan-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tout l'historique, pas juste le dernier commit
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
