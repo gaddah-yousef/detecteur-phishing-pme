@@ -1,6 +1,8 @@
 """Extraction des caractéristiques et entraînement du détecteur de phishing."""
 
 import ipaddress
+import json
+from pathlib import Path
 import re
 from urllib.parse import urlparse
 
@@ -160,16 +162,124 @@ def extraire_caracteristiques(url: str) -> dict[str, int]:
     }
 
 
-if __name__ == "__main__":
-    url_exemple = (
-        "http://42.231.90.113/"
-        "secure-paypal-login//verify%20account"
+
+RACINE = Path(__file__).resolve().parent
+DATASET_DEFAUT = RACINE / "data" / "phishing_site_urls.csv"
+MODELE_DEFAUT = RACINE / "models" / "phishing_detector.joblib"
+
+
+def charger_dataset_etiquete(chemin: Path):
+    """Charge un CSV avec URL/Label (bad/good, phishing/legitimate ou 1/0)."""
+    import pandas as pd
+
+    if not chemin.is_file():
+        raise FileNotFoundError(
+            f"Dataset absent : {chemin}. Fournissez --dataset <CSV> "
+            "ou utilisez tests/fixtures/urls_demo.csv pour la démonstration."
+        )
+    df = pd.read_csv(chemin, usecols=["URL", "Label"])
+    df = df.dropna(subset=["URL", "Label"]).copy()
+    df["URL"] = df["URL"].astype(str).str.strip()
+    df["Label"] = df["Label"].astype(str).str.strip().str.lower()
+    labels = {"bad": 1, "phishing": 1, "1": 1,
+              "good": 0, "legitimate": 0, "legitime": 0, "0": 0}
+    if not df["Label"].isin(labels).all():
+        raise ValueError("Labels attendus : bad/good, phishing/legitimate ou 1/0.")
+    df = df.loc[df["URL"].ne("")].copy()
+    df["y"] = df["Label"].map(labels).astype(int)
+
+    # La même URL ne doit jamais se trouver dans le train et dans le test.
+    # Écarter les cas contradictoires, puis dédupliquer les URLs restantes.
+    ambigu = df.groupby("URL")["y"].nunique()
+    df = df.loc[~df["URL"].isin(ambigu[ambigu > 1].index)]
+    df = df.drop_duplicates(subset=["URL"]).reset_index(drop=True)
+    if df["y"].nunique() != 2 or df["y"].value_counts().min() < 3:
+        raise ValueError("Au moins 3 URLs distinctes par classe sont nécessaires.")
+    return df
+
+
+def entrainer_et_evaluer(dataset: Path, output: Path, test_size: float = 0.25,
+                         random_state: int = 42) -> dict:
+    """Entraîne un baseline supervisé et persiste modèle + métriques.
+
+    Les métriques mesurent uniquement le jeu d'évaluation fourni.
+    Elles ne constituent pas une certification de détection en production.
+    """
+    import joblib
+    import pandas as pd
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import (
+        accuracy_score, confusion_matrix, f1_score,
+        precision_score, recall_score,
     )
+    from sklearn.model_selection import train_test_split
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
-    caracteristiques = extraire_caracteristiques(url_exemple)
+    if not 0.1 <= test_size <= 0.5:
+        raise ValueError("test_size doit être compris entre 0.1 et 0.5.")
+    df = charger_dataset_etiquete(dataset)
+    x = pd.DataFrame([extraire_caracteristiques(url) for url in df["URL"]])
+    y = df["y"]
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, stratify=y, random_state=random_state
+    )
+    model = Pipeline([
+        ("scale", StandardScaler()),
+        ("classifier", LogisticRegression(max_iter=1500, class_weight="balanced",
+                                           random_state=random_state)),
+    ])
+    model.fit(x_train, y_train)
+    predictions = model.predict(x_test)
+    metrics = {
+        "samples": len(df),
+        "train_samples": len(x_train),
+        "test_samples": len(x_test),
+        "positive_fraction": round(float(y.mean()), 4),
+        "accuracy": round(float(accuracy_score(y_test, predictions)), 4),
+        "precision": round(float(precision_score(y_test, predictions, zero_division=0)), 4),
+        "recall": round(float(recall_score(y_test, predictions, zero_division=0)), 4),
+        "f1": round(float(f1_score(y_test, predictions, zero_division=0)), 4),
+        "confusion_matrix": confusion_matrix(y_test, predictions, labels=[0, 1]).tolist(),
+        "dataset": str(dataset),
+        "random_state": random_state,
+        "model": "StandardScaler + LogisticRegression (class_weight=balanced)",
+        "note": "Validation pédagogique, non représentative d'un trafic de production.",
+    }
 
-    print("URL analysée :", url_exemple)
-    print("Caractéristiques :")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"modele": model, "features": list(x.columns),
+                 "metrics": metrics}, output)
+    metrics_path = output.with_suffix(".metrics.json")
+    metrics_path.write_text(
+        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return metrics
 
-    for nom, valeur in caracteristiques.items():
-        print(f"- {nom}: {valeur}")
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Entraîne un classifieur pédagogique d'URLs de phishing."
+    )
+    parser.add_argument("--dataset", type=Path, default=DATASET_DEFAUT)
+    parser.add_argument("--output", type=Path, default=MODELE_DEFAUT)
+    parser.add_argument("--test-size", type=float, default=0.25)
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--demo-features", action="store_true",
+                        help="Affiche les caractéristiques d'une URL fictive.")
+    args = parser.parse_args()
+    if args.demo_features:
+        exemple = "http://203.0.113.10/verify-account"
+        print(json.dumps(extraire_caracteristiques(exemple), indent=2))
+        return
+    print(json.dumps(
+        entrainer_et_evaluer(args.dataset, args.output, args.test_size,
+                            args.random_state),
+        indent=2, ensure_ascii=False,
+    ))
+
+
+if __name__ == "__main__":
+    main()
