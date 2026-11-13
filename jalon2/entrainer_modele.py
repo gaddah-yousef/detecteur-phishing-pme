@@ -2,8 +2,8 @@
 
 import ipaddress
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 MOTS_SUSPECTS = [
@@ -209,8 +209,11 @@ def entrainer_et_evaluer(dataset: Path, output: Path, test_size: float = 0.25,
     import pandas as pd
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import (
-        accuracy_score, confusion_matrix, f1_score,
-        precision_score, recall_score,
+        accuracy_score,
+        confusion_matrix,
+        f1_score,
+        precision_score,
+        recall_score,
     )
     from sklearn.model_selection import train_test_split
     from sklearn.pipeline import Pipeline
