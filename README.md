@@ -1,129 +1,147 @@
-# Détecteur de phishing pour PME
+# Phishing Detection for SMEs — CTI, Machine Learning & DevSecOps
 
 [![CI DevSecOps](https://github.com/gaddah-yousef/detecteur-phishing-pme/actions/workflows/ci.yml/badge.svg)](https://github.com/gaddah-yousef/detecteur-phishing-pme/actions/workflows/ci.yml)
 
-**Projet pédagogique de Cyber Threat Intelligence, détection d'URLs suspectes et DevSecOps.** L'objectif est d'explorer une chaîne progressive allant de l'acquisition d'indicateurs de phishing à leur analyse et à leur visualisation pour des PME.
+A reproducible **educational phishing URL analysis project** for SMEs, combining threat-intelligence collection, lexical URL features, supervised classification, risk visualization and secure CI.
 
-> **Statut : prototype par jalons.** La collecte, l'extraction de caractéristiques, les tests associés et un tableau de bord de consultation des signalements sont présents. L'entraînement complet d'un modèle, sa validation sur un jeu de données étiqueté et son intégration au tableau de bord ne sont **pas démontrés par l'état actuel du dépôt**. Ne pas présenter ce projet comme un détecteur de phishing prêt pour la production.
+> **Scope:** this is a **research prototype**, not a production anti-phishing gateway. It never visits the URLs submitted for classification. A good score on the included synthetic demo dataset does **not** demonstrate accuracy on real phishing traffic.
 
-## 1. Problématique et objectifs
+## 1. Objectives
 
-Les PME ont besoin de moyens accessibles pour examiner les indicateurs de phishing et comprendre les signaux de risque d'une URL. Ce projet explore trois axes complémentaires :
+- Collect and summarize known phishing URL indicators from a public CTI feed.
+- Extract explainable, static URL features without contacting target sites.
+- Train and evaluate a baseline binary classifier on an **external labelled** dataset.
+- Save a versioned local model artifact plus JSON metrics.
+- Visualize CTI findings and classify sample URLs from a Streamlit interface.
+- Enforce basic quality/security checks through GitHub Actions.
 
-- **Threat Intelligence :** collecte d'URLs signalées et consultation de leur contexte.
-- **Détection :** extraction de caractéristiques lexicales d'URL en vue d'un modèle de classification.
-- **Industrialisation :** qualité du code, tests et contrôles de sécurité dans GitHub Actions.
+## 2. Architecture
 
-Le système aide à étudier des signalements ; il ne garantit ni qu'une URL non signalée soit sûre ni qu'un signalement soit encore actif.
-
-## 2. Architecture et périmètre
-
-```text
-Flux public PhishTank (CSV)
-         |
-         v
-jalon1/telecharger_urls.py
-  téléchargement + nettoyage + export CSV local
-         |
-         v
-jalon1/data/urls_phishing_*.csv
-         |
-         +------------------> jalon3/app.py
-         |                    Streamlit : volumes, marques, derniers signalements
-         |
-         +--> jalon2/entrainer_modele.py
-              extraction de 13 caractéristiques d'URL
-                       |
-                       v
-              [à compléter : entraînement et évaluation]
-                       |
-                       v
-              models/phishing_detector.joblib (non fourni)
-                       |
-                       v
-              jalon2/tester_modele.py
-              prédiction sur un modèle préalablement entraîné
+```mermaid
+flowchart LR
+  PhishTank[PhishTank HTTPS CSV] --> Collect[Python collector]
+  Collect --> CTI[Local CTI CSV]
+  CTI --> Dashboard[Streamlit CTI dashboard]
+  Dataset[Labelled URL CSV: URL,Label] --> Features[13 static URL features]
+  Features --> Split[Stratified train/test split]
+  Split --> Model[StandardScaler + LogisticRegression]
+  Model --> Artifact[Joblib model + JSON metrics]
+  Artifact --> Inference[CLI inference and Streamlit form]
 ```
 
-### Réalisé et à compléter
+**Important:** PhishTank's indicator feed is **not** automatically a labelled benign-versus-phishing training set. For supervised training, supply a dataset with both **legitimate and malicious** URLs and carefully review its provenance and license.
 
-| Composant | État observable dans le dépôt |
-|---|---|
-| Collecte de signalements | Script Python utilisant `requests` et `pandas` |
-| Export de données | CSV horodatés dans `jalon1/data/` |
-| Extraction de caractéristiques | 13 variables lexicales et structurelles d'URL |
-| Interface Streamlit | Affichage du CSV de collecte, statistiques et top des marques |
-| Prédiction par modèle | Script de chargement disponible ; artefact de modèle non fourni |
-| Entraînement/évaluation ML | Documentation pédagogique ; pipeline d'entraînement complet à finaliser |
-| DevSecOps | GitHub Actions : Ruff, pytest, Bandit, pip-audit et Gitleaks |
-
-## 3. Structure du dépôt
+## 3. Repository structure
 
 ```text
 .
-├── .github/workflows/ci.yml      # Intégration continue et contrôles de sécurité
+├── .github/workflows/ci.yml           # Ruff, Pytest, Bandit, pip-audit, Gitleaks
 ├── jalon1/
-│   ├── telecharger_urls.py       # Collecte et export PhishTank
-│   ├── note_phishing.md          # Notes sur la menace
-│   └── requirements.txt
+│   └── telecharger_urls.py            # HTTPS feed collection / CSV normalization
 ├── jalon2/
-│   ├── entrainer_modele.py       # Extraction de caractéristiques
-│   ├── tester_modele.py          # Chargement d'un modèle sauvegardé
-│   ├── explorer_dataset.py
-│   ├── GUIDE_JALON2.md           # Démarche ML détaillée
-│   ├── resultats_jalon2.md
+│   ├── entrainer_modele.py            # Feature engineering, training, evaluation
+│   ├── tester_modele.py               # Local prediction (never connects to URL)
+│   ├── explorer_dataset.py            # Dataset exploration
+│   ├── GUIDE_JALON2.md                # ML learning guide
 │   └── tests/
+│       ├── test_caracteristiques.py
+│       └── test_training_pipeline.py
 ├── jalon3/
-│   └── app.py                    # Tableau de bord Streamlit
-├── ROADMAP_DEVSECOPS.md
+│   └── app.py                         # Streamlit dashboard and optional prediction
+├── tests/fixtures/urls_demo.csv       # Synthetic demonstration labels only
 ├── requirements.txt
-└── requirements-dev.txt
+├── requirements-dev.txt
+└── ROADMAP_DEVSECOPS.md
 ```
 
-Les données collectées et les modèles entraînés localement ne doivent pas être confondus avec des résultats versionnés dans le dépôt.
+Outputs are saved under `jalon1/data/` and `jalon2/models/` locally and should not be committed if they contain live indicators or large datasets.
 
-## 4. Installation et démonstration
+## 4. Installation
 
-### Prérequis
-
-- Python 3 et `pip` ;
-- connexion réseau pour récupérer les signalements ;
-- accès à un environnement de laboratoire autorisé.
+**Prerequisites:** Python 3.12+ (Python 3.13 is used by the current CI workflow), pip and an isolated virtual environment.
 
 ```bash
 git clone https://github.com/gaddah-yousef/detecteur-phishing-pme.git
 cd detecteur-phishing-pme
 python -m venv .venv
-# Linux/macOS : source .venv/bin/activate
-# Windows PowerShell : .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-**Étape A — Collecter les signalements**
+### Step A — Fetch threat-intelligence indicators (optional)
 
 ```bash
 python jalon1/telecharger_urls.py
 ```
 
-Le script interroge un flux CSV PhishTank, résume les indicateurs reçus et génère un fichier local sous `jalon1/data/`. **Attention : l'URL actuellement codée dans ce script utilise HTTP et non HTTPS.** Vérifier la disponibilité et la sécurité de la source avant de l'intégrer à un processus réel.
+The collector requests a CSV through **HTTPS**, validates the expected columns, deduplicates URLs and stores a timestamped CSV. Availability depends on the upstream PhishTank service and its access conditions; if unavailable, the **model demo and static predictor still work offline**.
 
-**Étape B — Explorer les caractéristiques d'une URL**
+**Safety:** collected indicators may point to harmful websites. Never open them directly in a normal browser. The application only displays them.
+
+### Step B — Train a reproducible model
+
+For a purely **synthetic demonstration** (48 fabricated `.invalid` examples):
 
 ```bash
-python jalon2/entrainer_modele.py
+python -m jalon2.entrainer_modele --dataset tests/fixtures/urls_demo.csv
 ```
 
-À ce stade, le fichier exécute une **démonstration d'extraction de caractéristiques** : longueur, sous-domaines approximatifs, chiffres, présence d'une IP, marqueurs suspects, encodage, HTTPS, etc. Il **n'entraîne pas** un modèle lors de cette exécution.
+This creates:
+- `jalon2/models/phishing_detector.joblib` — scaler, classifier, feature names and metrics;
+- `jalon2/models/phishing_detector.metrics.json` — accuracy, precision, recall, F1, confusion matrix, class counts and split metadata.
 
-**Étape C — Visualiser les signalements**
+For a **real evaluation**, provide your own labelled CSV:
+
+```csv
+URL,Label
+https://example.com/guides,good
+http://suspicious-url.example.invalid/verify,bad
+```
+
+The fragment above illustrates the **format only**, not a sufficient dataset.
+
+```bash
+python -m jalon2.entrainer_modele \
+  --dataset jalon2/data/phishing_site_urls.csv \
+  --test-size 0.25 --random-state 42
+```
+
+Accepted labels: `good`, `legitimate`, `legitime`, `0` for legitimate URLs and `bad`, `phishing`, `1` for phishing. The pipeline removes contradictory labels and duplicate URLs **before** splitting, to reduce exact-URL training/test leakage.
+
+The model uses `StandardScaler + LogisticRegression(class_weight="balanced")`. **Metrics represent only the supplied evaluation split**; domain-level leakage, dataset bias and distribution shift still require further research.
+
+### Step C — Analyze a URL locally
+
+```bash
+python -m jalon2.tester_modele "https://www.example.com/"
+```
+
+This reads the **locally trained model** and analyzes the URL string; it does not navigate to the site or send the URL to a third party.
+
+**Warning:** Python `joblib.load` can execute arbitrary code from a malicious artifact. Only load files generated by trusted local training.
+
+### Step D — Open the Streamlit dashboard
 
 ```bash
 streamlit run jalon3/app.py
 ```
 
-Le tableau de bord nécessite un CSV généré à l'étape A. Il affiche les signalements et statistiques de source ; il n'affiche pas encore une prédiction calculée par un modèle entraîné.
+When a CTI CSV exists, the dashboard displays statistics and collected indicators. When a model exists, it also offers **static prediction**, an indicative probability and the features used. Both sections explain what is missing when no feed/model has been prepared.
 
-### Tests et contrôles locaux
+## 5. Detection approach
+
+The 13 lexical features include:
+- URL length, domain length, punctuation and digits;
+- estimated subdomain count;
+- IP literal in the hostname;
+- URL encoding, `@` symbol and repeated slash in the path;
+- HTTPS usage indicator;
+- a simple suspicious-keyword flag.
+
+These are **heuristics**, not independent proof of phishing. Legitimate login pages can contain suspicious keywords and malicious pages can have valid TLS certificates.
+
+## 6. Tests and CI
 
 ```bash
 python -m pytest -v
@@ -132,42 +150,24 @@ bandit -r jalon1 jalon2 -x jalon2/tests
 pip-audit
 ```
 
-La CI ajoute également un contrôle Gitleaks. Les résultats dépendent de l'environnement et de la version des dépendances ; ce README ne prétend pas que tous les contrôles réussissent sans exécution.
+The repository contains feature-extraction unit tests and a new **end-to-end train → save → load → predict** test operating on synthetic data. The GitHub Actions pipeline also runs a Gitleaks scan.
 
-## 5. Méthodologie de détection
+No live third-party target is scanned by these tests. Check the GitHub Actions run before claiming all tests pass in your environment.
 
-Les caractéristiques d'URL calculées comprennent notamment :
+## 7. Limits, risks and roadmap
 
-| Famille | Exemples | Limite |
-|---|---|---|
-| Structure | longueur d'URL/domaine, points, sous-domaines | un domaine long n'est pas nécessairement malveillant |
-| Contenu | mots tels que `login`, `verify`, `account` | des sites légitimes utilisent aussi ces mots |
-| Syntaxe | `@`, adresse IP, encodage `%XX`, double slash dans le chemin | indicateurs non suffisants seuls |
-| Transport | présence du schéma `https` | HTTPS ne garantit pas qu'un site soit fiable |
+- Synthetic demo scores are **not** predictive of real-world effectiveness.
+- Public phishing feeds can change format, access requirements and availability.
+- Collected malicious URLs must not be automatically opened.
+- The baseline model does not include HTML content, DNS, WHOIS or sandbox detonation.
+- URL-level deduplication does not replace domain-disjoint evaluation, cross-validation or time-split evaluation.
+- A classifier score is not a calibrated probability without an additional calibration analysis.
+- This proof of concept has no production email gateway, automatic blocking or false-positive management.
 
-Pour aller vers une classification fiable, il faudra documenter : provenance et licence du dataset, déduplication, partage entraînement/test sans fuite, déséquilibre des classes, précision, rappel, F1, matrice de confusion et seuil de décision.
+**Next milestones:** benchmark an independently sourced dataset; evaluate precision/recall under class imbalance; add domain-based grouped splits; calibrate risk outputs; maintain a documented model card; add monitoring for concept drift and retraining controls.
 
-## 6. Sécurité, limites et bonnes pratiques
+## 8. Portfolio value
 
-- **Ne pas ouvrir automatiquement** les URLs de phishing collectées dans un navigateur personnel.
-- Ne pas scanner ni solliciter des domaines tiers sans autorisation.
-- Préférer l'analyse **statique** des chaînes d'URL dans un laboratoire isolé.
-- Aucune prédiction ne doit être présentée comme un verdict définitif sans validation.
-- Le script `tester_modele.py` nécessite un fichier `models/phishing_detector.joblib` compatible qui n'est pas présent dans l'arborescence actuelle.
-- Ne pas charger d'artefacts `joblib` non fiables : leur désérialisation peut exécuter du code.
+**Cyber Threat Intelligence · Python · Data Quality · Machine Learning Baselines · FastAPI-adjacent Security Engineering · Streamlit · DevSecOps · CI/CD · Explainable Features.**
 
-## 7. Feuille de route
-
-1. Finaliser un pipeline d'entraînement reproductible et sauvegarder les métriques de validation.
-2. Connecter les prédictions du modèle au tableau de bord Streamlit.
-3. Ajouter des tests de bout en bout sur données synthétiques.
-4. Documenter la gestion des faux positifs et la mise à jour des indicateurs.
-5. Ajouter des jeux de démonstration sans URLs dangereuses pour une démo hors ligne.
-
-## 8. Compétences mises en pratique
-
-**CTI / OSINT défensif · Python · Pandas · Feature engineering · Scikit-learn · Streamlit · Tests · SAST · SCA · Secret scanning · GitHub Actions.**
-
-Pour approfondir, lire [le guide du jalon 2](jalon2/GUIDE_JALON2.md) et [la roadmap DevSecOps](ROADMAP_DEVSECOPS.md).
-
-**Auteur / portfolio :** [Yousef Gaddah](https://github.com/gaddah-yousef) — projet de formation et expérimentation en cybersécurité.
+**Author:** [Yousef Gaddah](https://github.com/gaddah-yousef) — responsible, authorized cybersecurity research.
